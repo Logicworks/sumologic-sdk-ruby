@@ -2,6 +2,7 @@ require 'faraday'
 require 'faraday_middleware'
 require 'faraday-cookie_jar'
 require 'multi_json'
+require 'hashie'
 
 module SumoLogic
   VERSION = '0.0.5'.freeze
@@ -26,16 +27,14 @@ module SumoLogic
 
     def search(query, from_time = nil, to_time = nil, time_zone = 'UTC')
       params = { q: query, from: from_time, to: to_time, tz: time_zone }
-      r = @session.get do |req|
-        req.url 'logs/search'
-        req.params = params
-      end
+      url = 'logs/search'
+      get(url, body: params)
     end
 
     def search_job(query, from_time = nil, to_time = nil, time_zone = 'UTC')
       params = { query: query, from: from_time, to: to_time, timeZone: time_zone }
       url = 'search/jobs'
-      post(url, params)
+      post(url, body: params)
     end
 
     def search_job_status(search_job = {})
@@ -46,13 +45,13 @@ module SumoLogic
     def search_job_records(search_job, limit = nil, offset = 0)
       params = { limit: limit, offset: offset }
       url = 'search/jobs/' + search_job['id'].to_s + '/records'
-      get(url, params, 'records')
+      get(url, body: params, key: 'records')
     end
 
     def dashboards(monitors = false)
       params = { dashboards: monitors }
       url = 'dashboards'
-      get(url, params, url)
+      get(url, body: params, key: url)
     end
 
     def collectors
@@ -76,7 +75,7 @@ module SumoLogic
 
     def create_source(collector_id, params)
       url = 'collectors/' + collector_id.to_s + '/sources'
-      post(url, MultiJson.encode(params), 'source')
+      post(url, body: MultiJson.encode(params), key: 'source')
     end
 
     def dashboard(dashboard_id)
@@ -91,7 +90,7 @@ module SumoLogic
 
     private
 
-    def get(url, params)
+    def get(url, params = {})
       r = nil
       loop do
         r = @session.get do |req|
@@ -103,11 +102,10 @@ module SumoLogic
         reload_session
       end
 
-      return r.body.fetch(params[:key], nil) unless params[:key].nil?
-      r.body
+      format_for_return(r.body, params[:key])
     end
 
-    def post(url, params)
+    def post(url, params = {})
       r = nil
       loop do
         r = @session.post do |req|
@@ -119,8 +117,17 @@ module SumoLogic
         reload_session
       end
 
-      return r.body.fetch(params[:key], nil) unless params[:key].nil?
-      r.body
+      format_for_return(r.body, params[:key])
+    end
+
+    def format_for_return(body, key = nil)
+      body = Hashie::Mash.new(body)
+
+      if key
+        body.fetch(key, nil)
+      else
+        body
+      end
     end
 
     def reload_session
